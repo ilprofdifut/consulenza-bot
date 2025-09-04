@@ -1,6 +1,6 @@
 const { Telegraf } = require('telegraf');
 
-// Legge i valori dalle variabili d’ambiente (Render li fornirà)
+// Variabili d’ambiente (impostate su Render)
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = Number(process.env.ADMIN_CHAT_ID);
 
@@ -13,9 +13,14 @@ const state = new Map(); // userId -> stato
 
 bot.start(async (ctx) => {
   state.set(ctx.from.id, 'awaiting_name');
-  await ctx.reply('INSERISCI NOME E COGNOME', {
-    reply_markup: { force_reply: true, input_field_placeholder: 'Nome Cognome' }
-  });
+  await ctx.reply(
+    'Benvenuto👋,\n' +
+    'procediamo alla registrazione per CONSULENZA DEL PROF.⚽\n' +
+    'INSERISCI IL TUO NOME E COGNOME',
+    {
+      reply_markup: { force_reply: true, input_field_placeholder: 'Nome Cognome' }
+    }
+  );
 });
 
 bot.on('text', async (ctx) => {
@@ -34,7 +39,7 @@ bot.on('text', async (ctx) => {
   const lastName = info.last_name || "(vuoto)";
   const username = info.username ? '@' + info.username : "(nessuno)";
 
-  // Messaggio a te admin con TUTTO
+  // Messaggio all’admin con TUTTO
   await ctx.telegram.sendMessage(
     ADMIN_CHAT_ID,
     `Nuova registrazione:\n` +
@@ -46,9 +51,12 @@ bot.on('text', async (ctx) => {
     `Last name: ${lastName}`
   );
 
-  // Conferma all’utente
+  // Conferma all’utente (nuovo testo)
   await ctx.reply(
-    'Registrazione completata. Benvenuto!\nSegui i consigli nei gruppi e mi raccomando: fai tanti milioni!'
+    '✅Registrazione completata.\n' +
+    'Benvenuto!🔥\n' +
+    '👉Ti ricordo che devi restare sia all\'interno della community Whatsapp, sia del gruppo Telegram.\n' +
+    'Segui i consigli nei gruppi e mi raccomando: FAI TANTI MILIONI 🚀'
   );
 
   state.set(ctx.from.id, 'registered');
