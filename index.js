@@ -11,34 +11,53 @@ if (!BOT_TOKEN || !ADMIN_CHAT_ID) {
 const bot = new Telegraf(BOT_TOKEN);
 const state = new Map(); // userId -> stato
 
-// /chat <user_id>: genera deep link alla chat con quell'utente (anche senza username)
+// Helper admin
+const isAdmin = (ctx) => ctx.from?.id === ADMIN_CHAT_ID;
+
+// /chat [user_id]
+// - Se passi l'ID: usa quello
+// - Se rispondi al messaggio del bot con dentro "ID: <numero>": lo estrae dal testo
 bot.command('chat', async (ctx) => {
-  // Consenti solo in chat privata e solo all'admin
   if (ctx.chat.type !== 'private') {
     return ctx.reply('Usa questo comando in privato col bot.');
   }
-  if (ctx.from.id !== ADMIN_CHAT_ID) {
+  if (!isAdmin(ctx)) {
     return ctx.reply('❌ Non hai i permessi per questo comando.');
   }
 
-  const args = ctx.message.text.split(' ').slice(1);
-  if (!args.length) {
-    return ctx.reply('Uso: /chat <user_id>');
+  const parts = ctx.message.text.split(' ').slice(1);
+  let targetId = parts[0]?.trim();
+
+  if (!targetId && ctx.message.reply_to_message) {
+    const r = ctx.message.reply_to_message;
+    const srcText = r.text || r.caption || '';
+
+    // Cerca "ID: <numero>" nel testo del messaggio a cui stai rispondendo
+    const m1 = srcText.match(/(?:^|\n)\s*ID:\s*(\d{5,20})\b/i);
+    if (m1) targetId = m1[1];
+    else {
+      // fallback molto stretto: "ID" vicino a numeri
+      const m2 = srcText.match(/ID[^\d]{0,5}(\d{5,20})/i);
+      if (m2) targetId = m2[1];
+    }
   }
 
-  const targetUserId = args[0].trim();
-  const deepLink = `tg://user?id=${encodeURIComponent(targetUserId)}`;
+  if (!targetId || !/^\d+$/.test(String(targetId))) {
+    return ctx.reply('Uso: /chat <user_id>\nOppure: rispondi al mio messaggio di registrazione e invia /chat');
+  }
+
+  const deepLink = `tg://user?id=${encodeURIComponent(targetId)}`;
 
   try {
-    // Funziona solo se il bot ha già “visto” quell’utente
-    const chat = await ctx.telegram.getChat(targetUserId);
-    const full = [chat.first_name, chat.last_name].filter(Boolean).join(' ') || 'utente';
-    await ctx.reply(`Chat con ${full} (ID: ${targetUserId})`, {
+    // Se il bot ha già “visto” quell’utente, mostra anche nome/cognome
+    const chat = await ctx.telegram.getChat(targetId);
+    const name = [chat.first_name, chat.last_name].filter(Boolean).join(' ') || 'utente';
+    await ctx.reply(`Chat con ${name} (ID: ${targetId})`, {
       reply_markup: { inline_keyboard: [[{ text: 'Apri su Telegram', url: deepLink }]] }
     });
   } catch {
-    // Mostra comunque il deep link
-    await ctx.reply(`Link alla chat con ID ${targetUserId}:`, {
+    // Altrimenti mostra solo il deep link
+    await ctx.reply(`Link alla chat con ID ${targetId}:`, {
       reply_markup: { inline_keyboard: [[{ text: 'Apri su Telegram', url: deepLink }]] }
     });
   }
@@ -62,12 +81,12 @@ bot.start(async (ctx) => {
 bot.on('text', async (ctx, next) => {
   const s = state.get(ctx.from.id);
 
-  // Se non stiamo aspettando il nome, passa al prossimo middleware (comandi ecc.)
+  // Se non stiamo aspettando il nome, passa oltre (permette a /chat & co. di funzionare)
   if (s !== 'awaiting_name') return next();
 
   const text = ctx.message.text?.trim() || '';
 
-  // Se l'utente invia un comando (es. /chat, /start), lascia che lo gestiscano gli handler dei comandi
+  // Se è un comando (es. /chat, /start), lascialo gestire agli altri handler
   if (text.startsWith('/')) return next();
 
   if (!text) {
@@ -81,17 +100,27 @@ bot.on('text', async (ctx, next) => {
   const lastName = info.last_name || "(vuoto)";
   const username = info.username ? '@' + info.username : "(nessuno)";
 
-  // Messaggio all’admin con TUTTO
-  await ctx.telegram.sendMessage(
-    ADMIN_CHAT_ID,
+  const deepLink = `tg://user?id=${encodeURIComponent(userId)}`;
+
+  // Messaggio all’admin con TUTTO + bottone "Apri chat"
+  const adminText =
     `Nuova registrazione:\n` +
     `Nome e Cognome (inserito): ${text}\n\n` +
     `Dati Telegram:\n` +
     `ID: ${userId}\n` +
     `Username: ${username}\n` +
     `First name: ${firstName}\n` +
-    `Last name: ${lastName}`
-  );
+    `Last name: ${lastName}`;
+
+  const buttons = [[{ text: 'Apri chat', url: deepLink }]];
+  // Se c'è username, aggiungi anche link t.me
+  if (info.username) {
+    buttons[0].push({ text: 'Profilo t.me', url: `https://t.me/${info.username}` });
+  }
+
+  await ctx.telegram.sendMessage(ADMIN_CHAT_ID, adminText, {
+    reply_markup: { inline_keyboard: buttons }
+  });
 
   // Conferma all’utente
   await ctx.reply(
@@ -104,7 +133,7 @@ bot.on('text', async (ctx, next) => {
   state.set(ctx.from.id, 'registered');
 });
 
-// Avvio: (opzionale) rimuovi eventuale webhook e parti in polling
+// Avvio: rimuovi eventuale webhook e parti in polling
 (async () => {
   try {
     await bot.telegram.deleteWebhook({ drop_pending_updates: false });
