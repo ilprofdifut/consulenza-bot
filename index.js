@@ -185,4 +185,3 @@ bot.on('text', async (ctx, next) => {
 // ===== Arresto pulito (Render) =====
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
